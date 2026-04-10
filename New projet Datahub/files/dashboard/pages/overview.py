@@ -3,7 +3,8 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from data_loader import get_laps, get_pit_stops, get_standings, show_source_badge, TEAM_COLORS
+from data_loader import get_laps, get_pit_stops, show_source_badge, TEAM_COLORS
+from mock_data import get_standings as _get_standings_direct
 
 PLOT = dict(
     paper_bgcolor="#161B27", plot_bgcolor="#0F1117",
@@ -82,7 +83,7 @@ def show(session_key, gp_name: str, n_laps: int,
                        round_num=round_num, n_laps=n_laps, circuit=circuit)
     df_pit  = get_pit_stops(session_key=session_key, year=year,
                             round_num=round_num, circuit=circuit)
-    df_std  = get_standings(year=year)
+    df_std  = _get_standings_direct(year=year)
 
     st.markdown(f"""
     <div class="page-header">

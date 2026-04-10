@@ -367,15 +367,10 @@ def get_weather(session_key=None, n_points: int = 57,
 
 def get_standings(year: int = 2024) -> pd.DataFrame:
     """Retourne le classement championnat pour l'année donnée."""
-    df = _mock_standings()
-    # Adapter les points selon l'année (simulation réaliste)
-    if not df.empty and year != 2024:
-        import numpy as np
-        np.random.seed(year)
-        df = df.copy()
-        df["points"] = np.random.randint(50, 600, size=len(df))
-        df = df.sort_values("points", ascending=False).reset_index(drop=True)
-    return df
+    import importlib
+    import mock_data as _md
+    importlib.reload(_md)
+    return _md.get_standings(year)
 
 
 def get_telemetry(driver: str, laps: int = 50,
