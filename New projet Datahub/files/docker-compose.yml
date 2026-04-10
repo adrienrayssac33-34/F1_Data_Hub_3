@@ -1,0 +1,157 @@
+# ═══════════════════════════════════════════════════════════════
+# F1 Data Hub — Docker Compose
+# Projet 3 · 
+# ═══════════════════════════════════════════════════════════════
+# Lancement : docker compose up -d
+# Arrêt     : docker compose down
+# Logs      : docker compose logs -f airflow-scheduler
+# ═══════════════════════════════════════════════════════════════
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.1
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # Variables partagées pour les DAGs
+    F1_DB_CONN: postgresql+psycopg2://f1user:f1pass@postgres/f1_data_hub
+    F1_SCHEMA_RAW: raw
+    F1_SCHEMA_STG: staging
+    F1_SCHEMA_MART: mart
+    PYTHONPATH: /opt/airflow/dags:/opt/airflow/plugins
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/config:/opt/airflow/config
+    - ./etl:/opt/airflow/etl
+    - fastf1_cache:/opt/airflow/fastf1_cache
+  depends_on: &airflow-depends
+    postgres:
+      condition: service_healthy
+  networks:
+    - f1net
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16
+    container_name: f1_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    networks:
+      - f1net
+
+  # ── Airflow — Init ─────────────────────────────────────────
+  airflow-init:
+    <<: *airflow-common
+    container_name: f1_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --firstname F1 \
+          --lastname Admin \
+          --role Admin \
+          --email admin@f1hub.local \
+          --password admin
+        echo "Airflow init done"
+    restart: on-failure
+
+  # ── Airflow — Scheduler ────────────────────────────────────
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: f1_airflow_scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+
+  # ── Airflow — Webserver ────────────────────────────────────
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: f1_airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+
+  # ── dbt ────────────────────────────────────────────────────
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.7.9
+    container_name: f1_dbt
+    working_dir: /dbt
+    environment:
+      DBT_PROFILES_DIR: /dbt
+    volumes:
+      - ./dbt:/dbt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - f1net
+    # dbt ne tourne pas en continu — il est appelé par Airflow via DockerOperator
+    # Pour lancer manuellement : docker compose run dbt run
+    command: ["debug"]
+
+  # ── Streamlit ──────────────────────────────────────────────
+  streamlit:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: f1_streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      F1_DB_HOST: postgres
+      F1_DB_PORT: 5432
+      F1_DB_NAME: f1_data_hub
+      F1_DB_USER: f1user
+      F1_DB_PASS: f1pass
+    volumes:
+      - ./dashboard:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - f1net
+    restart: always
+    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+
+networks:
+  f1net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  fastf1_cache:

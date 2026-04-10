@@ -1,0 +1,50 @@
+# ═══════════════════════════════════════════════════════════════
+# dbt/models/sources.yml
+# Déclaration des sources raw pour dbt
+# ═══════════════════════════════════════════════════════════════
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: "Données brutes chargées par le pipeline ETL"
+    tables:
+      - name: sessions
+        description: "Catalogue des courses 2020-2025"
+        columns:
+          - name: session_key
+            description: "Clé OpenF1 (nullable pour 2020-2022)"
+          - name: year
+            tests: [not_null]
+          - name: round
+            tests: [not_null]
+          - name: gp_name
+            tests: [not_null]
+
+      - name: laps
+        description: "Données de tours par session"
+        columns:
+          - name: session_key
+            tests: [not_null]
+          - name: lap_time_s
+            description: "Temps au tour en secondes"
+
+      - name: drivers
+        description: "Pilotes par session"
+
+      - name: pit_stops
+        description: "Pit stops par session"
+
+      - name: weather
+        description: "Données météo par session"
+
+      - name: driver_standings
+        description: "Classements pilotes (Jolpica)"
+        columns:
+          - name: year
+            tests: [not_null]
+          - name: driver_id
+            tests: [not_null]
+
+      - name: team_standings
+        description: "Classements équipes (Jolpica)"
